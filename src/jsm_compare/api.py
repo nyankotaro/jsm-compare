@@ -19,29 +19,42 @@ def get_cloud_id(client: httpx.Client, host: str) -> str:
 def fetch_rules_summary(
     client: httpx.Client, host: str, cloud_id: str
 ) -> list[dict]:
-    """Fetch all automation rule summaries with pagination."""
+    """Fetch all automation rule summaries.
+
+    Why ?limit=1000:
+        The upstream /rule/summary endpoint has a cursor-based pagination defect.
+        On a tenant with ~180 rules across multiple pages:
+        - default paging: duplicated records across page boundaries, missed rules
+        - ?limit=1000 (single shot): all unique, no misses
+        Setting a large limit makes the server respond in a single batch which
+        avoids the bug. The cursor loop is retained as a fallback for tenants
+        that exceed 1000 rules. uuid-based dedupe is applied unconditionally as
+        a safety net.
+    """
     base_path = (
         f"https://{host}/gateway/api/automation/public/jira/{cloud_id}"
         f"/rest/v1/rule/summary"
     )
-    all_rules: list[dict] = []
-    url = base_path
-    page = 0
+    seen: dict[str, dict] = {}
+    seen_cursors: set[str] = set()
+    url = f"{base_path}?limit=1000"
 
-    while url and page < 20:
+    while url:
         resp = client.get(url)
         resp.raise_for_status()
         data = resp.json()
-        all_rules.extend(data.get("data", []))
+        for r in data.get("data", []):
+            uuid = r.get("uuid")
+            if uuid:
+                seen[uuid] = r
 
         next_cursor = data.get("links", {}).get("next")
-        if next_cursor:
-            url = f"{base_path}{next_cursor}"
-            page += 1
-        else:
+        if not next_cursor or next_cursor in seen_cursors:
             break
+        seen_cursors.add(next_cursor)
+        url = f"{base_path}{next_cursor}"
 
-    return all_rules
+    return list(seen.values())
 
 
 def fetch_rule_detail(
@@ -64,3 +77,74 @@ def build_client(user: str, token: str) -> httpx.Client:
         headers={"Accept": "application/json"},
         timeout=30,
     )
+
+
+# --- Jira REST API v3 (for workflows comparison) ---
+
+
+def fetch_project(client: httpx.Client, host: str, project_key: str) -> dict:
+    """Fetch project details including project ID."""
+    url = f"https://{host}/rest/api/3/project/{project_key}"
+    resp = client.get(url)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def fetch_project_statuses(
+    client: httpx.Client, host: str, project_key: str
+) -> list[dict]:
+    """Fetch statuses grouped by issue type for a project."""
+    url = f"https://{host}/rest/api/3/project/{project_key}/statuses"
+    resp = client.get(url)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def fetch_workflows(
+    client: httpx.Client, host: str, project_id: str
+) -> list[dict]:
+    """Fetch workflows for a project with statuses and transitions expanded."""
+    url = f"https://{host}/rest/api/3/workflow/search"
+    all_workflows: list[dict] = []
+    start_at = 0
+
+    while True:
+        resp = client.get(
+            url,
+            params={
+                "projectId": project_id,
+                "expand": "statuses,transitions",
+                "startAt": start_at,
+                "maxResults": 50,
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        values = data.get("values", [])
+        all_workflows.extend(values)
+        if data.get("isLast", True) or not values:
+            break
+        start_at += len(values)
+
+    return all_workflows
+
+
+def fetch_global_statuses(client: httpx.Client, host: str) -> list[dict]:
+    """Fetch all global statuses with pagination."""
+    url = f"https://{host}/rest/api/3/statuses/search"
+    all_statuses: list[dict] = []
+    start_at = 0
+
+    while True:
+        resp = client.get(
+            url, params={"maxResults": 200, "startAt": start_at}
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        values = data.get("values", [])
+        all_statuses.extend(values)
+        if data.get("isLast", True) or not values:
+            break
+        start_at += len(values)
+
+    return all_statuses

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "jsm-compare"
-version = "0.1.1"
+version = "0.2.0"
 description = "Compare JSM automation rules and workflows between Jira Cloud environments"
 readme = "README.md"
 license = "MIT"

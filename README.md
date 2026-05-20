@@ -26,7 +26,7 @@ pip install jsm-compare
 export JIRA_USER="me@example.com"
 export JIRA_API_TOKEN="ATATT3x..."
 
-# ドメイン指定（推奨）- sandbox/本番を自動展開
+# ドメイン指定（推奨）- sandbox/production を自動展開
 jsm-compare rules --domain my-project
 
 # セクション指定
@@ -35,18 +35,18 @@ jsm-compare rules --domain my-project --section triggers
 jsm-compare rules --domain my-project --section components
 
 # フルホスト名指定（カスタムホスト名の場合）
-jsm-compare rules --source my-project-sandbox.atlassian.net --target my-project.atlassian.net
+jsm-compare rules --sandbox my-project-sandbox.atlassian.net --production my-project.atlassian.net
 ```
 
-`--domain my-project` は `--source my-project-sandbox.atlassian.net --target my-project.atlassian.net` に展開されます。
+`--domain my-project` は `--sandbox my-project-sandbox.atlassian.net --production my-project.atlassian.net` に展開されます。
 
 ### オプション
 
 | オプション | 環境変数 | デフォルト | 説明 |
 |---|---|---|---|
 | `--domain` | `JSM_DOMAIN` | - | ドメインプレフィックス。`{domain}-sandbox` と `{domain}` に展開 |
-| `--source` | - | - | ソース環境のホスト名（`--domain`と排他） |
-| `--target` | - | - | ターゲット環境のホスト名（`--domain`と排他） |
+| `--sandbox` | - | - | sandbox環境のホスト名（`--domain`と排他） |
+| `--production` | - | - | 本番環境のホスト名（`--domain`と排他） |
 | `--user` | `JIRA_USER` | 必須 | Jira Cloud のメールアドレス |
 | `--token` | `JIRA_API_TOKEN` | 必須 | Jira API トークン |
 | `--section` | - | 全セクション | 比較セクション指定（`rules-overview` / `triggers` / `components`） |
@@ -86,22 +86,24 @@ Automation REST APIにアクセスするには Jira管理者権限が必要で�
 
 ```
 JSM Automation Rules Comparison
-  Source: my-project-sandbox.atlassian.net
-  Target: my-project.atlassian.net
+  Sandbox:    my-project-sandbox.atlassian.net
+  Production: my-project.atlassian.net
   Filter: [MyPrefix]
   Ignore env-specific: ON (customfield IDs, domain URLs, workspaceId, schemaId)
 
-  [INFO]  Total rules: source=12, target=15
-  [INFO]  Filtered: source=5, target=5
+  [INFO]  Total rules: sandbox=12, production=15
+  [INFO]  Filtered: sandbox=5, production=5
 
 ────────────────── Section 1: Rules Overview ──────────────────
 
-  [INFO]  Only in source:
+  [INFO]  Only in sandbox:
     [MyPrefix]Old Rule 20260101 [DISABLED]
 
   [MATCH] [MyPrefix]Recovery Notification 20260401
   [DIFF]  [MyPrefix]Customer Comment Notification 20260401
-          description: "...managed by Admin User" -> "...Slack API : https://api.slack.com/..."
+          description:
+            sandbox:    "...managed by Admin User"
+            production: "...Slack API : https://api.slack.com/..."
 
 ────────────────── Section 2: Triggers ─────────────────────
 
@@ -111,10 +113,14 @@ JSM Automation Rules Comparison
 
   [MATCH] [MyPrefix]Recovery Notification 20260401
   [DIFF]  [MyPrefix]Customer Comment Notification 20260401
-          [1].value.channel: "#test-channel" -> "#production-channel"
-          [1].value.webhookUrl: "https://hooks.slack.com/..." -> "https://hooks.slack.com/..."
+          [1].value.channel:
+            sandbox:    "#test-channel"
+            production: "#production-channel"
+          [1].value.webhookUrl:
+            sandbox:    "https://hooks.slack.com/..."
+            production: "https://hooks.slack.com/..."
 
-Summary: 9 match, 2 diff, 1 source-only
+Summary: 9 match, 2 diff, 1 sandbox-only
 Differences found.
 ```
 
